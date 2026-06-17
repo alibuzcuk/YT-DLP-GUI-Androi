@@ -8,25 +8,18 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v4
-
-    - name: Set up JDK 17
-      uses: actions/setup-java@v4
+    - uses: actions/checkout@v4
+    - uses: actions/setup-java@v4
       with:
         java-version: '17'
         distribution: 'temurin'
 
-    - name: Scaffold Android Project Structure with Wrapper
+    - name: Setup Project and Build
       run: |
-        echo "Sıfırdan Android yapısı ve Gradle araçları kuruluyor..."
         mkdir -p app/src/main/java/com/example/ai_app
-        mkdir -p app/src/main/res/layout
         mkdir -p gradle/wrapper
         
-        # 1. Temel Build Dosyaları
         cat << 'EOF' > build.gradle
         buildscript {
             repositories { google(); mavenCentral() }
@@ -40,20 +33,11 @@ jobs:
         EOF
 
         cat << 'EOF' > app/build.gradle
-        plugins {
-            id 'com.android.application'
-            id 'org.jetbrains.kotlin.android' version '1.9.22'
-        }
+        plugins { id 'com.android.application'; id 'org.jetbrains.kotlin.android' version '1.9.22' }
         android {
             namespace 'com.example.ai_app'
             compileSdk 34
-            defaultConfig {
-                applicationId "com.example.ai_app"
-                minSdk 24
-                targetSdk 34
-                versionCode 1
-                versionName "1.0"
-            }
+            defaultConfig { applicationId "com.example.ai_app"; minSdk 24; targetSdk 34; versionCode 1; versionName "1.0" }
         }
         dependencies {
             implementation 'androidx.core:core-ktx:1.12.0'
@@ -62,11 +46,10 @@ jobs:
         }
         EOF
 
-        # 2. Android Manifest
         cat << 'EOF' > app/src/main/AndroidManifest.xml
         <manifest xmlns:android="http://schemas.android.com/apk/res/android">
             <uses-permission android:name="android.permission.INTERNET" />
-            <application android:label="AI Studio App" android:theme="@style/Theme.AppCompat.Light.NoActionBar">
+            <application android:label="AI App" android:theme="@style/Theme.AppCompat.Light.NoActionBar">
                 <activity android:name=".MainActivity" android:exported="true">
                     <intent-filter>
                         <action android:name="android.intent.action.MAIN" />
@@ -77,34 +60,19 @@ jobs:
         </manifest>
         EOF
 
-        # 3. Kotlin Kodunu Yerleştirme
-        if [ -f "MainActivity.kt" ]; then
-          cp MainActivity.kt app/src/main/java/com/example/ai_app/MainActivity.kt
-        else
-          cp *.kt app/src/main/java/com/example/ai_app/MainActivity.kt 2>/dev/null || true
-        fi
+        if [ -f "MainActivity.kt" ]; then cp MainActivity.kt app/src/main/java/com/example/ai_app/MainActivity.kt; fi
         
-        # 4. Eksik olan gradlew dosyalarını buraya sıfırdan yazıyoruz (En kritik kısım)
-        # gradlew wrapper özellik dosyası
         cat << 'EOF' > gradle/wrapper/gradle-wrapper.properties
-        distributionBase=GRADLE_USER_HOME
-        distributionPath=wrapper/dists
         distributionUrl=https\://services.gradle.org/distributions/gradle-8.5-bin.zip
-        zipStoreBase=GRADLE_USER_HOME
-        zipStorePath=wrapper/dists
         EOF
-
-        # Linux için gradlew çalıştırıcı betiği
+        
         curl -sL https://raw.githubusercontent.com/gradle/gradle/v8.5.0/gradlew -o gradlew
+        curl -sL https://raw.githubusercontent.com/gradle/gradle/v8.5.0/gradle/wrapper/gradle-wrapper.jar -o gradle/wrapper/gradle-wrapper.jar
+        
+        chmod +x gradlew
+        ./gradlew assembleDebug
 
-    - name: Grant execute permission for gradlew
-      run: chmod +x gradlew
-
-    - name: Build Debug APK
-      run: ./gradlew assembleDebug
-
-    - name: Upload APK Artifact
-      uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v4
       with:
-        name: Google-AI-Studio-APK
+        name: Final-APK
         path: app/build/outputs/apk/debug/app-debug.apk
