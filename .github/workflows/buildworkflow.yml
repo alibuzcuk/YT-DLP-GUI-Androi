@@ -20,6 +20,12 @@ jobs:
         mkdir -p app/src/main/java/com/example/ai_app
         mkdir -p gradle/wrapper
         
+        # AndroidX Aktif etme
+        cat << 'EOF' > gradle.properties
+        android.useAndroidX=true
+        android.enableJetifier=true
+        EOF
+
         cat << 'EOF' > build.gradle
         buildscript {
             repositories { google(); mavenCentral() }
@@ -32,24 +38,36 @@ jobs:
         include ':app'
         EOF
 
+        # Material 3 ve Compose/M3 bağımlılıkları eklendi
         cat << 'EOF' > app/build.gradle
         plugins { id 'com.android.application'; id 'org.jetbrains.kotlin.android' version '1.9.22' }
         android {
             namespace 'com.example.ai_app'
             compileSdk 34
             defaultConfig { applicationId "com.example.ai_app"; minSdk 24; targetSdk 34; versionCode 1; versionName "1.0" }
+            
+            // Eğer kod Jetpack Compose + Material 3 ise gerekli derleme ayarı
+            buildFeatures { compose true }
+            composeOptions { kotlinCompilerExtensionVersion '1.5.8' }
         }
         dependencies {
             implementation 'androidx.core:core-ktx:1.12.0'
             implementation 'androidx.appcompat:appcompat:1.6.1'
             implementation 'com.google.ai.client.generativeai:generativeai:0.2.2'
+            
+            # Material 3 Bileşenleri
+            implementation 'com.google.android.material:material:1.11.0'
+            implementation 'androidx.compose.material3:material3:1.2.0'
+            implementation 'androidx.compose.ui:ui-tooling-preview:1.6.1'
+            implementation 'androidx.activity:activity-compose:1.8.2'
         }
         EOF
 
+        # Manifest dosyası Material 3 temasıyla güncellendi
         cat << 'EOF' > app/src/main/AndroidManifest.xml
         <manifest xmlns:android="http://schemas.android.com/apk/res/android">
             <uses-permission android:name="android.permission.INTERNET" />
-            <application android:label="AI App" android:theme="@style/Theme.AppCompat.Light.NoActionBar">
+            <application android:label="AI App" android:theme="@style/Theme.Material3.DayNight.NoActionBar">
                 <activity android:name=".MainActivity" android:exported="true">
                     <intent-filter>
                         <action android:name="android.intent.action.MAIN" />
