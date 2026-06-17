@@ -20,7 +20,6 @@ jobs:
         mkdir -p app/src/main/java/com/example/ai_app
         mkdir -p gradle/wrapper
         
-        # AndroidX Aktif etme
         cat << 'EOF' > gradle.properties
         android.useAndroidX=true
         android.enableJetifier=true
@@ -38,7 +37,6 @@ jobs:
         include ':app'
         EOF
 
-        # Material 3 ve Compose/M3 bağımlılıkları eklendi
         cat << 'EOF' > app/build.gradle
         plugins { id 'com.android.application'; id 'org.jetbrains.kotlin.android' version '1.9.22' }
         android {
@@ -46,7 +44,6 @@ jobs:
             compileSdk 34
             defaultConfig { applicationId "com.example.ai_app"; minSdk 24; targetSdk 34; versionCode 1; versionName "1.0" }
             
-            // Eğer kod Jetpack Compose + Material 3 ise gerekli derleme ayarı
             buildFeatures { compose true }
             composeOptions { kotlinCompilerExtensionVersion '1.5.8' }
         }
@@ -55,7 +52,7 @@ jobs:
             implementation 'androidx.appcompat:appcompat:1.6.1'
             implementation 'com.google.ai.client.generativeai:generativeai:0.2.2'
             
-            # Material 3 Bileşenleri
+            // Material 3 Bileşenleri (Hata veren yer düzeltildi)
             implementation 'com.google.android.material:material:1.11.0'
             implementation 'androidx.compose.material3:material3:1.2.0'
             implementation 'androidx.compose.ui:ui-tooling-preview:1.6.1'
@@ -63,7 +60,6 @@ jobs:
         }
         EOF
 
-        # Manifest dosyası Material 3 temasıyla güncellendi
         cat << 'EOF' > app/src/main/AndroidManifest.xml
         <manifest xmlns:android="http://schemas.android.com/apk/res/android">
             <uses-permission android:name="android.permission.INTERNET" />
