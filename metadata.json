@@ -1,0 +1,6 @@
+{
+  "name": "Video Downloader & MP3 Converter",
+  "description": "Download videos from links and convert them locally to MP3 audio files without requiring FFmpeg.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
