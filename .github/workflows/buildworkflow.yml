@@ -17,7 +17,7 @@ jobs:
 
     - name: Setup Project and Build
       run: |
-        mkdir -p app/src/main/java/com/example/ai_app
+        # Klasörleri temizleyip kendi yapısına bırakıyoruz
         mkdir -p gradle/wrapper
         
         cat << 'EOF' > gradle.properties
@@ -28,7 +28,10 @@ jobs:
         cat << 'EOF' > build.gradle
         buildscript {
             repositories { google(); mavenCentral() }
-            dependencies { classpath 'com.android.tools.build:gradle:8.2.2' }
+            dependencies { 
+                classpath 'com.android.tools.build:gradle:8.2.2'
+                classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.22'
+            }
         }
         allprojects { repositories { google(); mavenCentral() } }
         EOF
@@ -37,20 +40,30 @@ jobs:
         include ':app'
         EOF
 
-        # Java 17 uyumluluk ayarları app/build.gradle dosyasına eklendi
+        # Uygulamanın tüm gerçek kütüphaneleri buraya yüklendi
         cat << 'EOF' > app/build.gradle
-        plugins { id 'com.android.application'; id 'org.jetbrains.kotlin.android' version '1.9.22' }
+        plugins { 
+            id 'com.android.application'
+            id 'org.jetbrains.kotlin.android' version '1.9.22'
+            id 'org.jetbrains.kotlin.kapt' version '1.9.22'
+        }
         android {
             namespace 'com.example.ai_app'
             compileSdk 34
-            defaultConfig { applicationId "com.example.ai_app"; minSdk 24; targetSdk 34; versionCode 1; versionName "1.0" }
-            
+            defaultConfig { 
+                applicationId "com.example.ai_app"
+                minSdk 24 
+                targetSdk 34 
+                versionCode 1 
+                versionName "1.0" 
+            }
             compileOptions {
                 sourceCompatibility JavaVersion.VERSION_17
                 targetCompatibility JavaVersion.VERSION_17
             }
             kotlinOptions {
                 jvmTarget = '17'
+                freeCompilerArgs += ["-opt-in=kotlinx.coroutines.ExperimentalCoroutinesApi"]
             }
             buildFeatures { compose true }
             composeOptions { kotlinCompilerExtensionVersion '1.5.8' }
@@ -60,30 +73,34 @@ jobs:
             implementation 'androidx.appcompat:appcompat:1.6.1'
             implementation 'com.google.ai.client.generativeai:generativeai:0.2.2'
             
-            // Material 3 Bileşenleri
+            // Material 3 Arayüz Elemanları
             implementation 'com.google.android.material:material:1.11.0'
             implementation 'androidx.compose.material3:material3:1.2.0'
             implementation 'androidx.compose.ui:ui-tooling-preview:1.6.1'
             implementation 'androidx.activity:activity-compose:1.8.2'
+            
+            // Projenin İhtiyaç Duyduğu Ağ ve Veritabanı Kütüphaneleri
+            implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+            implementation 'com.squareup.moshi:moshi-kotlin:1.15.0'
+            
+            // Room Veritabanı Kütüphaneleri
+            implementation 'androidx.room:room-runtime:2.6.1'
+            implementation 'androidx.room:room-ktx:2.6.1'
+            kapt 'androidx.room:room-compiler:2.6.1'
+            
+            // Coroutines (Eşzamanlılık eklentileri)
+            implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
+            implementation 'androidx.lifecycle:lifecycle-viewmodel-ktx:2.6.2'
         }
         EOF
 
-        cat << 'EOF' > app/src/main/AndroidManifest.xml
-        <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-            <uses-permission android:name="android.permission.INTERNET" />
-            <application android:label="AI App" android:theme="@style/Theme.Material3.DayNight.NoActionBar">
-                <activity android:name=".MainActivity" android:exported="true">
-                    <intent-filter>
-                        <action android:name="android.intent.action.MAIN" />
-                        <category android:name="android.intent.category.LAUNCHER" />
-                    </intent-filter>
-                </activity>
-            </application>
-        </manifest>
-        EOF
+        # Eğer eski kopyalamadan dolayı yanlış yerde kalan kod varsa taşınmasını sağlıyoruz
+        mkdir -p app/src/main/java
+        if [ -d "com" ]; then cp -r com app/src/main/java/; fi
+        if [ -d "app/src/main/java/com/example/ai_app" ] && [ -f "MainActivity.kt" ]; then
+            cp MainActivity.kt app/src/main/java/com/example/ai_app/MainActivity.kt
+        fi
 
-        if [ -f "MainActivity.kt" ]; then cp MainActivity.kt app/src/main/java/com/example/ai_app/MainActivity.kt; fi
-        
         cat << 'EOF' > gradle/wrapper/gradle-wrapper.properties
         distributionUrl=https\://services.gradle.org/distributions/gradle-8.5-bin.zip
         EOF
