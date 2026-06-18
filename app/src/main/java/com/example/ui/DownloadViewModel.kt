@@ -54,7 +54,7 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
     private val _conversionProgress = MutableStateFlow(0f)
     val conversionProgress = _conversionProgress.asStateFlow()
 
-    // Cloud Extraction switch; disabled by default to comply with user's instructions
+    // Cloud Extraction switch; disabled by default to favor 100% On-Device Offline mode as requested
     private val _isCloudExtractionEnabled = MutableStateFlow(false)
     val isCloudExtractionEnabled = _isCloudExtractionEnabled.asStateFlow()
 
@@ -120,23 +120,25 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
                     Result.success(cleanUrl)
                 } else {
                     // Perform an HTTP HEAD check to see if it is already a direct media stream
-                    var isDirectMedia = false
-                    try {
-                        val client = OkHttpClient.Builder()
-                            .connectTimeout(10, TimeUnit.SECONDS)
-                            .readTimeout(10, TimeUnit.SECONDS)
-                            .build()
-                        val headRequest = Request.Builder().url(cleanUrl).head().build()
-                        client.newCall(headRequest).execute().use { response ->
-                            if (response.isSuccessful) {
-                                val contentType = response.header("Content-Type") ?: ""
-                                if (contentType.startsWith("video/") || contentType.startsWith("audio/") || contentType.startsWith("application/octet-stream")) {
-                                    isDirectMedia = true
+                    val isDirectMedia = withContext(Dispatchers.IO) {
+                        try {
+                            val client = OkHttpClient.Builder()
+                                .connectTimeout(10, TimeUnit.SECONDS)
+                                .readTimeout(10, TimeUnit.SECONDS)
+                                .build()
+                            val headRequest = Request.Builder().url(cleanUrl).head().build()
+                            client.newCall(headRequest).execute().use { response ->
+                                if (response.isSuccessful) {
+                                    val contentType = response.header("Content-Type") ?: ""
+                                    contentType.startsWith("video/") || contentType.startsWith("audio/") || contentType.startsWith("application/octet-stream")
+                                } else {
+                                    false
                                 }
                             }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "HEAD request check failed, fallback to scraper.", e)
+                            false
                         }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "HEAD request check failed, fallback to scraper.", e)
                     }
 
                     if (isDirectMedia) {
@@ -149,10 +151,15 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
                             Result.success(scrapedUrl)
                         } else {
                             if (cleanUrl.startsWith("http", ignoreCase = true)) {
-                                // Default fallback: attempt direct download of URL
-                                Result.success(cleanUrl)
+                                Log.d(TAG, "Local scraper failed. Attempting intelligent Cloud API fallback...")
+                                val fallbackResult = CobaltService.getDownloadUrl(cleanUrl, downloadMode)
+                                if (fallbackResult.isSuccess) {
+                                    fallbackResult
+                                } else {
+                                    Result.failure(Exception("Doğrudan medya bağlantısı tespit edilemedi. Lütfen 'Bulut Sunucu Modu' ayarını aktif edin veya geçerli bir medya dosyası bağlantısı sağlayın."))
+                                }
                             } else {
-                                Result.failure(Exception("Direct media link could not be parsed. Please provide an active HTTP stream URL or toggle Cloud Extraction in options."))
+                                Result.failure(Exception("Geçersiz internet adresi. Lütfen geçerli bir sosyal medya veya dosya bağlantısı girin."))
                             }
                         }
                     }
@@ -321,6 +328,9 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
     /**
      * Scrapes direct media links (.mp4, .mp3, .m4a) from page HTML source code completely locally on-device.
      */
+    /**
+     * Scrapes direct media links (.mp4, .mp3, .m4a) from page HTML source code completely locally on-device.
+     */
     private suspend fun scrapeDirectMediaUrlFromHtml(pageUrl: String, downloadMode: String): String? {
         return withContext(Dispatchers.IO) {
             try {
@@ -332,37 +342,80 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
                 val request = Request.Builder()
                     .url(pageUrl)
                     .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                    .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
+                    .header("Accept-Language", "en-US,en;q=0.5")
                     .build()
                 
                 okHttpClient.newCall(request).execute().use { response ->
                     if (response.isSuccessful) {
                         val html = response.body?.string() ?: ""
                         
-                        // HTML dynamic video tags patterns
+                        // Local helper to clean and unescape JSON backslashes and HTML entities in parsed URLs
+                        fun cleanUrl(raw: String): String {
+                            var cleaned = raw.replace("\\/", "/")
+                                .replace("\\\\/", "/")
+                                .replace("&amp;", "&")
+                                .replace("\\u0026", "&")
+                            if (cleaned.startsWith("//")) {
+                                cleaned = "https:" + cleaned
+                            }
+                            return cleaned
+                        }
+
+                        // 1. Open Graph meta video/audio tags - highly reliable on modern platforms
+                        val ogVideoRegex = """<meta[^>]+property=["']og:video["'][^>]+content=["'](https?://[^"']+)["']""".toRegex(RegexOption.IGNORE_CASE)
+                        val ogVideoAltRegex = """<meta[^>]+content=["'](https?://[^"']+)["'][^>]+property=["']og:video["']""".toRegex(RegexOption.IGNORE_CASE)
+                        val ogVideoSecureRegex = """<meta[^>]+property=["']og:video:secure_url["'][^>]+content=["'](https?://[^"']+)["']""".toRegex(RegexOption.IGNORE_CASE)
+                        
+                        if (downloadMode != "audio") {
+                            ogVideoSecureRegex.find(html)?.groupValues?.get(1)?.let { return@withContext cleanUrl(it) }
+                            ogVideoRegex.find(html)?.groupValues?.get(1)?.let { return@withContext cleanUrl(it) }
+                            ogVideoAltRegex.find(html)?.groupValues?.get(1)?.let { return@withContext cleanUrl(it) }
+                        }
+
+                        // 2. Platform-Specific JSON variables often embedded in SPA scripts
+                        // Instagram Video URL matchers
+                        val instaVideoUrlRegex = """"video_url"\s*:\s*"([^"]+)"""".toRegex(RegexOption.IGNORE_CASE)
+                        instaVideoUrlRegex.find(html)?.groupValues?.get(1)?.let { return@withContext cleanUrl(it) }
+
+                        // TikTok Player Address matchers
+                        val tiktokPlayAddrRegex = """"playAddr"\s*:\s*"([^"]+)"""".toRegex(RegexOption.IGNORE_CASE)
+                        val tiktokDownloadAddrRegex = """"downloadAddr"\s*:\s*"([^"]+)"""".toRegex(RegexOption.IGNORE_CASE)
+                        tiktokPlayAddrRegex.find(html)?.groupValues?.get(1)?.let { return@withContext cleanUrl(it) }
+                        tiktokDownloadAddrRegex.find(html)?.groupValues?.get(1)?.let { return@withContext cleanUrl(it) }
+
+                        // YouTube Direct Video block finder (googlevideo source urls)
+                        val googleVideoRegex = """(https?:\\?/\\?/[^\s"'\\]+?googlevideo\.com[^\s"'\\]+)""".toRegex(RegexOption.IGNORE_CASE)
+                        googleVideoRegex.find(html)?.groupValues?.get(1)?.let { return@withContext cleanUrl(it) }
+
+                        // 3. HTML Video/Source elements
                         val videoRegex = """<video[^>]*src=["'](https?://[^"']+)["']""".toRegex(RegexOption.IGNORE_CASE)
                         val sourceRegex = """<source[^>]*src=["'](https?://[^"']+)["']""".toRegex(RegexOption.IGNORE_CASE)
                         
-                        // JSON elements patterns
-                        val mp4Regex = """"(https?:[^"]+\.mp4(?:\?[^"]+)?)"""".toRegex(RegexOption.IGNORE_CASE)
-                        val mp3Regex = """"(https?:[^"]+\.mp3(?:\?[^"]+)?)"""".toRegex(RegexOption.IGNORE_CASE)
-                        val m4aRegex = """"(https?:[^"]+\.m4a(?:\?[^"]+)?)"""".toRegex(RegexOption.IGNORE_CASE)
+                        sourceRegex.find(html)?.groupValues?.get(1)?.let { return@withContext cleanUrl(it) }
+                        videoRegex.find(html)?.groupValues?.get(1)?.let { return@withContext cleanUrl(it) }
+
+                        // 4. JSON Escaped / Raw Direct Media Extensions matchers (MP4, MP3, M4A)
+                        val jsonEscapedMp4 = """(https?:\\?/\\?/[^\s"'\\]+?\.mp4(?:\?[^\s"'\\]+?)?)""".toRegex(RegexOption.IGNORE_CASE)
+                        val jsonEscapedMp3 = """(https?:\\?/\\?/[^\s"'\\]+?\.mp3(?:\?[^\s"'\\]+?)?)""".toRegex(RegexOption.IGNORE_CASE)
+                        val jsonEscapedM4a = """(https?:\\?/\\?/[^\s"'\\]+?\.m4a(?:\?[^\s"'\\]+?)?)""".toRegex(RegexOption.IGNORE_CASE)
 
                         if (downloadMode == "audio") {
-                            m4aRegex.find(html)?.groupValues?.get(1)?.let { return@withContext it }
-                            mp3Regex.find(html)?.groupValues?.get(1)?.let { return@withContext it }
-                        }
-                        
-                        sourceRegex.find(html)?.groupValues?.get(1)?.let { return@withContext it }
-                        videoRegex.find(html)?.groupValues?.get(1)?.let { return@withContext it }
-                        mp4Regex.find(html)?.groupValues?.get(1)?.let { return@withContext it }
-                        
-                        // Raw pattern falls
-                        if (downloadMode == "audio") {
-                            val rawMp3 = """https?://[^\s"'<>]+?\.mp3[^\s"'<>]*""".toRegex()
-                            rawMp3.find(html)?.value?.let { return@withContext it }
+                            jsonEscapedM4a.find(html)?.groupValues?.get(1)?.let { return@withContext cleanUrl(it) }
+                            jsonEscapedMp3.find(html)?.groupValues?.get(1)?.let { return@withContext cleanUrl(it) }
                         } else {
-                            val rawMp4 = """https?://[^\s"'<>]+?\.mp4[^\s"'<>]*""".toRegex()
-                            rawMp4.find(html)?.value?.let { return@withContext it }
+                            jsonEscapedMp4.find(html)?.groupValues?.get(1)?.let { return@withContext cleanUrl(it) }
+                        }
+
+                        // 5. Raw URL fellbacks (matches unquoted strings)
+                        if (downloadMode == "audio") {
+                            val rawMp3 = """https?://[^\s"'<>]+?\.mp3[^\s"'<>]*""".toRegex(RegexOption.IGNORE_CASE)
+                            val rawM4a = """https?://[^\s"'<>]+?\.m4a[^\s"'<>]*""".toRegex(RegexOption.IGNORE_CASE)
+                            rawM4a.find(html)?.value?.let { return@withContext cleanUrl(it) }
+                            rawMp3.find(html)?.value?.let { return@withContext cleanUrl(it) }
+                        } else {
+                            val rawMp4 = """https?://[^\s"'<>]+?\.mp4[^\s"'<>]*""".toRegex(RegexOption.IGNORE_CASE)
+                            rawMp4.find(html)?.value?.let { return@withContext cleanUrl(it) }
                         }
                     }
                 }

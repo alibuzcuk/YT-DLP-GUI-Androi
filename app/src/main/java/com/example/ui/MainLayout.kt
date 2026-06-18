@@ -527,13 +527,13 @@ fun DownloaderPanel(
                     ) {
                         Column {
                             Text(
-                                "Bulut Sunucu Modu (Cobalt API)",
+                                if (isCloudExtractionEnabled) "Bulut Destekli Çözümleme Modu" else "Cihaz İçi Çevrimdışı İndirme (API'siz)",
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Medium,
-                                color = if (isCloudExtractionEnabled) Color(0xFFD0BCFF) else Color(0xFFE6E1E5)
+                                color = if (!isCloudExtractionEnabled) Color(0xFFD0BCFF) else Color(0xFFE6E1E5)
                             )
                             Text(
-                                if (isCloudExtractionEnabled) "Bulut motoru aktif (Sadece uyumlu platformlar)" else "Yerel İndirme & Dönüştürücü aktif (100% Güvenli)",
+                                if (isCloudExtractionEnabled) "Bulut API'leri kullanılır (Bağlantı kararsız olabilir)" else "100% Cihaz içinde yerel çözümlenir (Güvenli ve Bağımsız)",
                                 fontSize = 9.sp,
                                 color = Color(0xFF938F99)
                             )
@@ -597,16 +597,16 @@ fun DownloaderPanel(
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
                     Text(
-                        "Hızlı Test Linkleri",
+                        "Hızlı Çevrimdışı Test Dosyaları",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF90A4AE)
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        "1. Örnek Video (MP4 Direct)",
+                        "🎬 Kısa Manzara Videosu (Direkt Link - MP4)",
                         fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = FontWeight.SemiBold,
                         color = Color(0xFF42A5F5),
                         modifier = Modifier
                             .clickable {
@@ -615,13 +615,24 @@ fun DownloaderPanel(
                             .padding(vertical = 4.dp)
                     )
                     Text(
-                        "2. Kısa Örnek Sosyal Video",
+                        "🐰 Big Buck Bunny (Animasyon - MP4)",
                         fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = FontWeight.SemiBold,
                         color = Color(0xFF42A5F5),
                         modifier = Modifier
                             .clickable {
-                                onUrlChange("https://www.youtube.com/watch?v=aqz-KE-bpKQ")
+                                onUrlChange("https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4")
+                            }
+                            .padding(vertical = 4.dp)
+                    )
+                    Text(
+                        "🎵 Doğrudan Müzik Parçası (Direkt Link - MP3)",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF42A5F5),
+                        modifier = Modifier
+                            .clickable {
+                                onUrlChange("https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3")
                             }
                             .padding(vertical = 4.dp)
                     )
@@ -708,18 +719,29 @@ fun ActiveDownloadCard(item: DownloadItem, onDelete: (DownloadItem) -> Unit) {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                LinearProgressIndicator(
-                    progress = { item.downloadProgress },
-                    color = Color(0xFFD0BCFF),
-                    trackColor = Color(0xFF4A4458),
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(6.dp)
-                        .clip(CircleShape)
-                )
+                if (item.downloadProgress < 0f) {
+                    LinearProgressIndicator(
+                        color = Color(0xFFD0BCFF),
+                        trackColor = Color(0xFF4A4458),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(6.dp)
+                            .clip(CircleShape)
+                    )
+                } else {
+                    LinearProgressIndicator(
+                        progress = { item.downloadProgress },
+                        color = Color(0xFFD0BCFF),
+                        trackColor = Color(0xFF4A4458),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(6.dp)
+                            .clip(CircleShape)
+                    )
+                }
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(
-                    text = "${(item.downloadProgress * 100).toInt()}%",
+                    text = if (item.downloadProgress < 0f) "..." else "${(item.downloadProgress * 100).toInt()}%",
                     fontSize = 12.sp,
                     color = Color(0xFFD0BCFF),
                     fontWeight = FontWeight.Bold
@@ -727,7 +749,11 @@ fun ActiveDownloadCard(item: DownloadItem, onDelete: (DownloadItem) -> Unit) {
             }
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "${formatFileSize((item.downloadProgress * item.fileSize).toLong())} / ${formatFileSize(item.fileSize)}",
+                text = if (item.downloadProgress < 0f) {
+                    "İndiriliyor: ${formatFileSize(item.fileSize)}"
+                } else {
+                    "${formatFileSize((item.downloadProgress * item.fileSize).toLong())} / ${formatFileSize(item.fileSize)}"
+                },
                 fontSize = 11.sp,
                 color = Color(0xFF938F99),
                 modifier = Modifier.align(Alignment.End)
